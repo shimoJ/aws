@@ -1,0 +1,158 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Manage myself verification environment
+
+Parameters: 
+  RdsInstanceName:
+    Description: "rds instance name"
+    Type: String
+    Default: rdsインスタンス名
+  SelectRegion:
+    Description: "select region"
+    Type: String
+    Default: リージョン名
+  AccountId:
+    Description: "write your account id"
+    Type: String
+    Default: アカウント名
+
+Resources: 
+  LambdaRoleStartRDS:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: PolicyStartRDS
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - "rds:StartDBInstance"
+            Resource: !Join
+            - ''
+            - - "arn:aws:rds:"
+              - !Ref SelectRegion
+              - ":"
+              - !Ref AccountId
+              - ":db:"
+              - !Ref RdsInstanceName
+          - Effect: Allow
+            Action:
+            - "logs:CreateLogGroup"
+            - "logs:CreateLogStream"
+            - "logs:PutLogEvents"
+            Resource: "*"
+
+  StartRDSLambda: 
+    Type: "AWS::Lambda::Function"
+    Properties: 
+      Handler: "index.handler"
+      Role: 
+        Fn::GetAtt: 
+          - "LambdaRoleStartRDS"
+          - "Arn"
+      Environment:
+        Variables:
+          rds_instance: !Ref RdsInstanceName
+      Runtime: "python3.7"
+      Code: 
+        ZipFile: |
+          import boto3
+          import os
+          instance = os.environ["rds_instance"]
+    
+          def handler(event, context):
+              rds = boto3.client('rds')
+              rds.start_db_instance(DBInstanceIdentifier=instance)
+
+  StartRDSScheduleEvent:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: ’StartRDS schedule event for lambda’
+      ScheduleExpression: 'cron(0 10 */6 * ? *)'
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt StartRDSLambda.Arn
+          Id: ScheduleEvent1Target
+    DependsOn:
+      - StartRDSLambda
+
+
+  LambdaRoleStopRDS:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: PolicyStartRDS
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - "rds:StopDBInstance"
+            Resource: !Join
+            - ''
+            - - "arn:aws:rds:"
+              - !Ref SelectRegion
+              - ":"
+              - !Ref AccountId
+              - ":db:"
+              - !Ref RdsInstanceName
+          - Effect: Allow
+            Action:
+            - "logs:CreateLogGroup"
+            - "logs:CreateLogStream"
+            - "logs:PutLogEvents"
+            Resource: "*"
+
+  StopRDSLambda: 
+    Type: "AWS::Lambda::Function"
+    Properties: 
+      Handler: "index.handler"
+      Role: 
+        Fn::GetAtt: 
+          - "LambdaRoleStopRDS"
+          - "Arn"
+      Environment:
+        Variables:
+          rds_instance: !Ref RdsInstanceName
+      Runtime: "python3.7"
+      Code: 
+        ZipFile: |
+          import boto3
+          import os
+          instance = os.environ["rds_instance"]
+    
+          def handler(event, context):
+              rds = boto3.client('rds')
+              rds.stop_db_instance(DBInstanceIdentifier=instance)
+
+  StopRDSScheduleEvent:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: ’StopRDS schedule event for lambda’
+      ScheduleExpression: 'cron(30 10 */6 * ? *)'
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt StopRDSLambda.Arn
+          Id: ScheduleEvent1Target
+    DependsOn:
+      - StopRDSLambda
